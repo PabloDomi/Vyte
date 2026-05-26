@@ -22,7 +22,6 @@ from ..exceptions import (
     ConfigurationError,
     FileSystemError,
     GenerationError,
-    GitError,
     ValidationError,
     VyteError,
 )
@@ -156,9 +155,6 @@ def create(name, framework, orm, database, auth, docker, tests, git, interactive
     except GenerationError as e:
         show_error("Generation Failed", [str(e)])
         sys.exit(1)
-    except GitError as e:
-        show_warning(f"Git initialization failed: {e}")
-        console.print("[yellow]Project created but git repository was not initialized[/yellow]")
     except KeyboardInterrupt:
         show_warning("Operation cancelled by user")
         sys.exit(130)  # Standard exit code for SIGINT

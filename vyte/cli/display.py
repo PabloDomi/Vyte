@@ -11,6 +11,7 @@ from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
+from ..__version__ import __version__
 from ..core.config import ProjectConfig
 from ..core.generator import ProjectGenerator
 
@@ -19,10 +20,11 @@ console = Console()
 
 def show_welcome():
     """Show welcome banner"""
-    banner = """
+    version_line = f"vyte {__version__}".ljust(31)
+    banner = f"""
     ╔═══════════════════════════════════════════╗
     ║                                           ║
-    ║        🚀  vyte v2.0                      ║
+    ║        🚀  {version_line}║
     ║     Rapid Development Tool                ║
     ║                                           ║
     ║   Professional API Generator for Python   ║
