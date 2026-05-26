@@ -138,7 +138,7 @@ jobs:
             https://pypi.org/project/vyte/${{ env.VERSION }}/
 
             ### What's Changed
-            See the [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+            See the [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/docs/CHANGELOG.md) for details.
           draft: false
           prerelease: false
 
