@@ -1,96 +1,93 @@
 """
-Alembic setup and configuration automation
+Alembic setup for FastAPI + SQLAlchemy projects.
+
+We always materialize the structure ourselves instead of shelling out to
+`alembic init`, because:
+  - it removes the runtime dependency on alembic being installed when vyte runs;
+  - we control the content of env.py (async-URL conversion, model imports);
+  - it eliminates a platform-specific failure mode (subprocess + cp1252 stdout).
 """
 
-# Use explicit encoding string when writing files. Do not import codec module here.
-import os
-import subprocess
 from pathlib import Path
 
 
-class AlembicConfigurator:
-    """
-    Handles automatic Alembic initialization and configuration
-    """
+_ALEMBIC_INI = """# A generic, single database configuration.
 
-    @staticmethod
-    def setup_alembic(project_path: Path, project_name: str, module_name: str = "src") -> bool:
-        """
-        Initialize and configure Alembic for FastAPI + SQLAlchemy projects
+[alembic]
+script_location = alembic
+prepend_sys_path = .
+path_separator = os
 
-        Args:
-            project_path: Root path of the project
-            project_name: Name of the project (for default DB name)
-            module_name: Name of the main module ('src' or 'app')
+sqlalchemy.url =
 
-        Returns:
-            True if successful, False otherwise
-        """
-        original_dir = os.getcwd()
+[loggers]
+keys = root,sqlalchemy,alembic
 
-        try:
-            os.chdir(project_path)
+[handlers]
+keys = console
 
-            # 1. Run alembic init
-            print("  🔧 Initializing Alembic...")
-            result = subprocess.run(
-                ["alembic", "init", "alembic"], capture_output=True, text=True, check=False
-            )
+[formatters]
+keys = generic
 
-            if result.returncode != 0:
-                print(f"  ⚠️  Warning: {result.stderr}")
-                print("  💡 Note: Alembic will be installed with dependencies")
-                return False
+[logger_root]
+level = WARNING
+handlers = console
+qualname =
 
-            # 2. Configure alembic.ini
-            print("  📝 Configuring alembic.ini...")
-            AlembicConfigurator._configure_alembic_ini(project_path)
+[logger_sqlalchemy]
+level = WARNING
+handlers =
+qualname = sqlalchemy.engine
 
-            # 3. Configure env.py
-            print("  📝 Configuring alembic/env.py...")
-            AlembicConfigurator._configure_env_py(project_path, project_name, module_name)
+[logger_alembic]
+level = INFO
+handlers =
+qualname = alembic
 
-            print("  ✅ Alembic configured successfully")
-            return True
+[handler_console]
+class = StreamHandler
+args = (sys.stderr,)
+level = NOTSET
+formatter = generic
 
-        except FileNotFoundError:
-            print("  ⚠️  Alembic not found. It will be installed with dependencies.")
-            return False
-        except (OSError, PermissionError, subprocess.SubprocessError) as e:
-            print(f"  ❌ Error setting up Alembic: {e}")
-            return False
-        finally:
-            os.chdir(original_dir)
+[formatter_generic]
+format = %(levelname)-5.5s [%(name)s] %(message)s
+datefmt = %H:%M:%S
+"""
 
-    @staticmethod
-    def _configure_alembic_ini(project_path: Path):
-        """Modify alembic.ini to use environment variables"""
-        alembic_ini = project_path / "alembic.ini"
 
-        if not alembic_ini.exists():
-            return
+_SCRIPT_MAKO = '''"""${message}
 
-        with open(alembic_ini, encoding="utf-8") as f:
-            content = f.read()
+Revision ID: ${up_revision}
+Revises: ${down_revision | comma,n}
+Create Date: ${create_date}
 
-        # Replace the sqlalchemy.url line
-        content = content.replace(
-            "sqlalchemy.url = driver://user:pass@localhost/dbname", "sqlalchemy.url = "
-        )
+"""
+from typing import Sequence, Union
 
-        with open(alembic_ini, "w", encoding="utf-8") as f:
-            f.write(content)
+from alembic import op
+import sqlalchemy as sa
+${imports if imports else ""}
 
-    @staticmethod
-    def _configure_env_py(project_path: Path, project_name: str, module_name: str):
-        """Replace env.py with configured version"""
-        env_py = project_path / "alembic" / "env.py"
+# revision identifiers, used by Alembic.
+revision: str = ${repr(up_revision)}
+down_revision: Union[str, None] = ${repr(down_revision)}
+branch_labels: Union[str, Sequence[str], None] = ${repr(branch_labels)}
+depends_on: Union[str, Sequence[str], None] = ${repr(depends_on)}
 
-        if not env_py.exists():
-            return
 
-        # Generate the configured env.py content
-        env_content = f'''import os
+def upgrade() -> None:
+    ${upgrades if upgrades else "pass"}
+
+
+def downgrade() -> None:
+    ${downgrades if downgrades else "pass"}
+'''
+
+
+def _env_py(module_name: str) -> str:
+    """Return the contents of alembic/env.py for the given source module."""
+    return f'''import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -101,26 +98,21 @@ from sqlalchemy import pool
 from alembic import context
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
-# Add project root to path
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-# Import Base and models
 from {module_name}.database import Base
-from {module_name}.models import *  # Import all models
+from {module_name}.models import *  # noqa: F401, F403 - register all models
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Get DATABASE_URL from .env and convert for Alembic
-database_url = os.getenv("DATABASE_URL", "sqlite:///./{{project_name}}.db")
-
-# Convert async URLs to sync for Alembic
+# Alembic uses sync drivers; rewrite the URL if the app uses async ones.
+database_url = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 if database_url.startswith("sqlite+aiosqlite"):
     database_url = database_url.replace("sqlite+aiosqlite", "sqlite")
 elif database_url.startswith("postgresql+asyncpg"):
@@ -169,108 +161,23 @@ else:
     run_migrations_online()
 '''
 
-        with open(env_py, "w", encoding="utf-8") as f:
-            f.write(env_content)
 
-    @staticmethod
-    def create_alembic_structure_manually(
-        project_path: Path, project_name: str, module_name: str = "src"
-    ):
-        """
-        Create Alembic structure manually without running alembic init
-        Use this as fallback if alembic command is not available
-        """
-        alembic_dir = project_path / "alembic"
-        versions_dir = alembic_dir / "versions"
+def setup_alembic(project_path: Path, module_name: str = "src") -> None:
+    """
+    Create the alembic/ directory and configuration files for a project.
 
-        # Create directories
-        alembic_dir.mkdir(exist_ok=True)
-        versions_dir.mkdir(exist_ok=True)
+    Args:
+        project_path: Root of the generated project.
+        module_name: Source module name (e.g. "src", "app") whose
+            `database` and `models` will be imported by env.py.
+    """
+    alembic_dir = project_path / "alembic"
+    versions_dir = alembic_dir / "versions"
 
-        # Create .gitkeep for versions
-        (versions_dir / ".gitkeep").touch()
+    alembic_dir.mkdir(exist_ok=True)
+    versions_dir.mkdir(exist_ok=True)
+    (versions_dir / ".gitkeep").touch()
 
-        # Create alembic.ini
-        alembic_ini_content = """# A generic, single database configuration.
-
-[alembic]
-script_location = alembic
-prepend_sys_path = .
-path_separator = os
-
-sqlalchemy.url =
-
-[loggers]
-keys = root,sqlalchemy,alembic
-
-[handlers]
-keys = console
-
-[formatters]
-keys = generic
-
-[logger_root]
-level = WARNING
-handlers = console
-qualname =
-
-[logger_sqlalchemy]
-level = WARNING
-handlers =
-qualname = sqlalchemy.engine
-
-[logger_alembic]
-level = INFO
-handlers =
-qualname = alembic
-
-[handler_console]
-class = StreamHandler
-args = (sys.stderr,)
-level = NOTSET
-formatter = generic
-
-[formatter_generic]
-format = %(levelname)-5.5s [%(name)s] %(message)s
-datefmt = %H:%M:%S
-"""
-
-        with open(project_path / "alembic.ini", "w", encoding="utf-8") as f:
-            f.write(alembic_ini_content)
-
-        # Create env.py
-        AlembicConfigurator._configure_env_py(project_path, project_name, module_name)
-
-        # Create script.py.mako
-        script_mako_content = '''"""${message}
-
-Revision ID: ${up_revision}
-Revises: ${down_revision | comma,n}
-Create Date: ${create_date}
-
-"""
-from typing import Sequence, Union
-
-from alembic import op
-import sqlalchemy as sa
-${imports if imports else ""}
-
-# revision identifiers, used by Alembic.
-revision: str = ${repr(up_revision)}
-down_revision: Union[str, None] = ${repr(down_revision)}
-branch_labels: Union[str, Sequence[str], None] = ${repr(branch_labels)}
-depends_on: Union[str, Sequence[str], None] = ${repr(depends_on)}
-
-
-def upgrade() -> None:
-    ${upgrades if upgrades else "pass"}
-
-
-def downgrade() -> None:
-    ${downgrades if downgrades else "pass"}
-'''
-
-        with open(alembic_dir / "script.py.mako", "w", encoding="utf-8") as f:
-            f.write(script_mako_content)
-
-        print("  ✅ Alembic structure created manually")
+    (project_path / "alembic.ini").write_text(_ALEMBIC_INI, encoding="utf-8")
+    (alembic_dir / "env.py").write_text(_env_py(module_name), encoding="utf-8")
+    (alembic_dir / "script.py.mako").write_text(_SCRIPT_MAKO, encoding="utf-8")
