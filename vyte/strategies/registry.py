@@ -11,17 +11,25 @@ no new classes, no new methods.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
 
 from ..core.config import ProjectConfig
 
 # Predicates -----------------------------------------------------------------
 
-_always: Callable[[ProjectConfig], bool] = lambda _c: True
-_if_auth: Callable[[ProjectConfig], bool] = lambda c: c.auth_enabled
-_if_tests: Callable[[ProjectConfig], bool] = lambda c: c.testing_suite
+
+def _always(_c: ProjectConfig) -> bool:
+    return True
+
+
+def _if_auth(c: ProjectConfig) -> bool:
+    return c.auth_enabled
+
+
+def _if_tests(c: ProjectConfig) -> bool:
+    return c.testing_suite
 
 
 # Specs ----------------------------------------------------------------------
@@ -51,7 +59,7 @@ class FrameworkSpec:
     init_dirs: tuple[str, ...] = ()
     files: tuple[FileSpec, ...] = ()
     test_files: tuple[FileSpec, ...] = ()
-    post_generate: Optional[Callable[[Path, ProjectConfig], None]] = field(
+    post_generate: Callable[[Path, ProjectConfig], None] | None = field(
         default=None, repr=False, compare=False
     )
 
