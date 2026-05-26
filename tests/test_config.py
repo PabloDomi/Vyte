@@ -95,7 +95,9 @@ def test_config_methods():
 
     assert config.is_async_framework() is True
     assert config.get_port() == 8000
-    assert config.get_python_version() == "3.11"
+    # python_version reflects the current runtime (e.g. "3.11", "3.12", "3.13")
+    pv = config.get_python_version()
+    assert pv.startswith("3.") and pv.count(".") == 1
 
     # Flask config
     config_flask = ProjectConfig(

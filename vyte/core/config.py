@@ -2,10 +2,13 @@
 Configuration module with Pydantic validation
 """
 
+import sys
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from ..__version__ import __version__
 
 # Type definitions for better type safety
 Framework = Literal["Flask-Restx", "FastAPI", "Django-Rest"]
@@ -40,25 +43,17 @@ class ProjectConfig(BaseModel):
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
-        """Validate project name format"""
-        # Convert to lowercase
+        """Validate project name format (filesystem checks happen in ProjectGenerator)"""
         v = v.lower().strip()
 
-        # Check if empty after strip
         if not v:
             raise ValueError("Project name cannot be empty")
 
-        # Check if already exists
-        if Path(v).exists():
-            raise ValueError(f"Directory '{v}' already exists")
-
-        # Check valid characters
         if not all(c.isalnum() or c in "-_" for c in v):
             raise ValueError(
                 "Project name can only contain letters, numbers, hyphens and underscores"
             )
 
-        # Cannot start with number
         if v[0].isdigit():
             raise ValueError("Project name cannot start with a number")
 
@@ -67,27 +62,17 @@ class ProjectConfig(BaseModel):
     @field_validator("orm")
     @classmethod
     def validate_orm(cls, v: ORM, info) -> ORM:
-        """Validate ORM compatibility with framework"""
+        """Validate ORM compatibility with framework (delegates to COMPATIBILITY_MATRIX)"""
         if not info.data:
             return v
 
         framework = info.data.get("framework")
+        if framework is None:
+            return v
 
-        # Compatibility rules
-        if framework == "Flask-Restx" and v == "TortoiseORM":
-            raise ValueError(
-                "TortoiseORM is not compatible with Flask-Restx "
-                "(async/sync mismatch). Use SQLAlchemy or Peewee instead."
-            )
-
-        if framework == "Django-Rest" and v != "DjangoORM":
-            raise ValueError("Django-Rest only works with DjangoORM")
-
-        if framework == "FastAPI" and v == "Peewee":
-            raise ValueError(
-                "Peewee is not recommended for FastAPI. "
-                "Use SQLAlchemy (async) or TortoiseORM instead."
-            )
+        is_valid, reason = validate_combination(framework, v)
+        if not is_valid:
+            raise ValueError(f"{v} is not compatible with {framework}: {reason}")
 
         return v
 
@@ -104,8 +89,8 @@ class ProjectConfig(BaseModel):
         return self.is_async_framework() and self.database != "SQLite"
 
     def get_python_version(self) -> str:
-        """Get recommended Python version"""
-        return "3.11"
+        """Get Python version of the current runtime (e.g. '3.12')"""
+        return f"{sys.version_info.major}.{sys.version_info.minor}"
 
     def get_port(self) -> int:
         """Get default port for framework"""
@@ -123,6 +108,10 @@ class ProjectConfig(BaseModel):
                 "port": self.get_port(),
                 "is_async": self.is_async_framework(),
                 "requires_async_driver": self.requires_async_driver(),
+                "vyte_version": __version__,
+                # Python-module-safe variant of name (e.g. "my-api" -> "my_api"),
+                # primarily used as the Django app/project module name.
+                "app_name": self.name.replace("-", "_"),
             }
         )
         return data
@@ -195,11 +184,9 @@ def quick_validate(framework: str, orm: str, database: str, name: str) -> tuple[
     """
     errors = []
 
-    # Validate name
+    # Validate name (filesystem checks happen in ProjectGenerator, not here)
     if not name or not name.strip():
         errors.append("Project name is required")
-    elif Path(name).exists():
-        errors.append(f"Directory '{name}' already exists")
 
     # Validate database
     if database not in ["PostgreSQL", "MySQL", "SQLite"]:
