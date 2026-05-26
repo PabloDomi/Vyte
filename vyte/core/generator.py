@@ -1,280 +1,151 @@
 """
-Main project generator using Strategy Pattern
+Project generator.
+
+Walks the declarative spec for a given (framework, ORM) combination and
+materializes the project on disk. There is exactly one rendering loop —
+adding a new framework means adding a `FrameworkSpec`, not subclassing.
 """
 
 import shutil
 from pathlib import Path
 
 from ..exceptions import FileSystemError, GenerationError
-from ..strategies.django_rest import DjangoRestStrategy
-from ..strategies.fastapi import FastAPIStrategy
-from ..strategies.flask_restx import FlaskRestxStrategy
+from ..strategies.registry import (
+    COMMON_FILES,
+    DOCKER_FILES,
+    FileSpec,
+    FrameworkSpec,
+    all_template_paths,
+    get_spec,
+)
 from .config import ProjectConfig
 from .dependencies import DependencyManager
-from .renderer import TemplateRegistry, TemplateRenderer
+from .renderer import TemplateRenderer
 
 
 class ProjectGenerator:
-    """
-    Main project generator
-    Orchestrates the project creation using appropriate strategy
-    """
-
-    # Strategy registry
-    STRATEGIES = {
-        "Flask-Restx": FlaskRestxStrategy,
-        "FastAPI": FastAPIStrategy,
-        "Django-Rest": DjangoRestStrategy,
-    }
+    """Generate a project from a `ProjectConfig` by following its spec."""
 
     def __init__(self, template_dir: Path | None = None):
-        """
-        Initialize generator
-
-        Args:
-            template_dir: Optional custom templates directory
-        """
         self.renderer = TemplateRenderer(template_dir)
         self.template_dir = template_dir
 
     def generate(self, config: ProjectConfig) -> Path:
-        """
-        Generate a complete project
-
-        Args:
-            config: Project configuration
-
-        Returns:
-            Path to generated project directory
+        """Generate the project. Returns the project path on success.
 
         Raises:
-            ValueError: If framework is not supported
-            FileExistsError: If project directory already exists
+            FileExistsError: target directory already exists.
+            GenerationError: any other generation failure (the partial
+                project directory is removed on failure).
         """
-        # Get project path
         project_path = config.get_output_path()
-
-        # Verify directory doesn't exist
         if project_path.exists():
             raise FileExistsError(
                 f"Directory already exists: {project_path}\n"
                 "Please choose a different name or delete the existing directory."
             )
 
-        # Create project directory
+        spec = get_spec(config)
+        context = config.model_dump_safe()
+
         project_path.mkdir(parents=True)
-
         try:
-            # Get appropriate strategy
-            strategy_class = self.STRATEGIES.get(config.framework)
-            if not strategy_class:
-                raise ValueError(
-                    f"Unsupported framework: {config.framework}\n"
-                    f"Supported frameworks: {', '.join(self.STRATEGIES.keys())}"
-                )
-
-            # Initialize strategy
-            strategy = strategy_class(config, self.renderer)
-
-            # Generate project structure
-            self._create_base_structure(project_path, config)
-
-            # Let strategy generate framework-specific files
-            strategy.generate_structure(project_path)
-            strategy.generate_files(project_path)
-
-            # Generate common files
-            self._generate_common_files(project_path, config)
-
-            # Generate dependencies
-            self._generate_dependencies(project_path, config)
-
-            # Generate Docker if enabled
+            self._create_dirs(project_path, spec, context, config)
+            self._render_all(project_path, COMMON_FILES, config, context)
             if config.docker_support:
-                self._generate_docker_files(project_path, config)
+                self._render_all(project_path, DOCKER_FILES, config, context)
+            self._render_all(project_path, spec.files, config, context)
+            if config.testing_suite:
+                self._render_all(project_path, spec.test_files, config, context)
+
+            DependencyManager.write_requirements_txt(config, project_path)
+            DependencyManager.write_requirements_dev_txt(project_path)
+
+            if spec.post_generate is not None:
+                spec.post_generate(project_path, config)
 
             return project_path
 
         except (OSError, PermissionError) as e:
-            # Clean up on file system failure
-            if project_path.exists():
-                try:
-                    shutil.rmtree(project_path)
-                except (OSError, PermissionError):
-                    pass  # Best effort cleanup
+            self._cleanup(project_path)
             raise FileSystemError(f"Failed to create project structure: {e}") from e
         except (GenerationError, FileSystemError):
-            # Re-raise our custom exceptions
-            if project_path.exists():
-                try:
-                    shutil.rmtree(project_path)
-                except (OSError, PermissionError):
-                    pass  # Best effort cleanup
+            self._cleanup(project_path)
             raise
         except Exception as e:
-            # Clean up and wrap unexpected errors
-            if project_path.exists():
-                try:
-                    shutil.rmtree(project_path)
-                except (OSError, PermissionError):
-                    pass  # Best effort cleanup
+            self._cleanup(project_path)
             raise GenerationError(f"Project generation failed: {e}") from e
 
-    def _create_base_structure(self, project_path: Path, config: ProjectConfig):
-        """Create basic directory structure"""
+    @staticmethod
+    def _cleanup(project_path: Path) -> None:
+        if project_path.exists():
+            shutil.rmtree(project_path, ignore_errors=True)
 
-        # Django tiene su propia estructura, skip base structure
-        if config.framework == "Django-Rest":
-            # Solo crear tests/ si tiene testing
-            if config.testing_suite:
-                tests_dir = project_path / "tests"
-                tests_dir.mkdir(exist_ok=True)
-                (tests_dir / "__init__.py").touch()
-            return
+    @staticmethod
+    def _create_dirs(
+        project_path: Path,
+        spec: FrameworkSpec,
+        context: dict,
+        config: ProjectConfig,
+    ) -> None:
+        """Create the directories declared by the spec, plus tests/ if enabled."""
+        for d in spec.dirs:
+            (project_path / d.format(**context)).mkdir(parents=True, exist_ok=True)
 
-        # Para Flask y FastAPI, crear estructura src/
-        dirs = [
-            "src",
-            "src/models",
-            "src/routes",
-            "src/services",
-            "src/config",
-            "src/utils",
-        ]
+        for d in spec.init_dirs:
+            (project_path / d.format(**context) / "__init__.py").touch()
 
         if config.testing_suite:
-            dirs.extend(["tests", "tests/integration"])
+            tests_dir = project_path / "tests"
+            tests_dir.mkdir(exist_ok=True)
+            (tests_dir / "__init__.py").touch()
 
-        for dir_name in dirs:
-            (project_path / dir_name).mkdir(parents=True, exist_ok=True)
-
-            # Create __init__.py in Python packages
-            if dir_name.startswith("src/") or dir_name == "tests":
-                (project_path / dir_name / "__init__.py").touch()
-
-    def _generate_common_files(self, project_path: Path, config: ProjectConfig):
-        """Generate files common to all projects"""
-        context = config.model_dump_safe()
-
-        # .gitignore
-        self.renderer.render_to_file(
-            TemplateRegistry.COMMON_TEMPLATES["gitignore"], project_path / ".gitignore", context
-        )
-
-        # .env.example
-        self.renderer.render_to_file(
-            TemplateRegistry.COMMON_TEMPLATES["env_example"], project_path / ".env.example", context
-        )
-
-        # README.md
-        self.renderer.render_to_file(
-            TemplateRegistry.COMMON_TEMPLATES["readme"], project_path / "README.md", context
-        )
-
-        # LICENSE
-        self.renderer.render_to_file(
-            TemplateRegistry.COMMON_TEMPLATES["license"], project_path / "LICENSE", context
-        )
-
-        # security.py (if auth enabled)
-        if config.auth_enabled:
-            # Para Django-Rest, crear en la raíz del proyecto
-            if config.framework == "Django-Rest":
-                security_path = project_path / "security.py"
-            else:
-                # Para Flask y FastAPI, crear en src/
-                security_path = project_path / "src" / "security.py"
-
-                self.renderer.render_to_file(
-                    TemplateRegistry.COMMON_TEMPLATES["security"], security_path, context
-                )
-
-        # pyproject.toml (modern Python packaging)
-        self.renderer.render_to_file(
-            TemplateRegistry.COMMON_TEMPLATES["pyproject_toml"],
-            project_path / "pyproject.toml",
-            context,
-        )
-
-        # pytest.ini (common test configuration) - place at project root
-        if config.testing_suite:
-            self.renderer.render_to_file(
-                TemplateRegistry.COMMON_TEMPLATES["pytest_ini"],
-                project_path / "pytest.ini",
-                context,
-            )
-
-    def _generate_dependencies(self, project_path: Path, config: ProjectConfig):
-        """Generate dependency files"""
-        # requirements.txt
-        DependencyManager.write_requirements_txt(config, project_path)
-
-        # requirements-dev.txt
-        DependencyManager.write_requirements_dev_txt(project_path)
-
-    def _generate_docker_files(self, project_path: Path, config: ProjectConfig):
-        """Generate Docker configuration"""
-        context = config.model_dump_safe()
-
-        # Dockerfile
-        self.renderer.render_to_file(
-            TemplateRegistry.COMMON_TEMPLATES["dockerfile"], project_path / "Dockerfile", context
-        )
-
-        # docker-compose.yml
-        self.renderer.render_to_file(
-            TemplateRegistry.COMMON_TEMPLATES["docker_compose"],
-            project_path / "docker-compose.yml",
-            context,
-        )
-
-        # .dockerignore
-        self.renderer.render_to_file(
-            TemplateRegistry.COMMON_TEMPLATES["dockerignore"],
-            project_path / ".dockerignore",
-            context,
-        )
+    def _render_all(
+        self,
+        project_path: Path,
+        files: tuple[FileSpec, ...],
+        config: ProjectConfig,
+        context: dict,
+    ) -> None:
+        for f in files:
+            if not f.when(config):
+                continue
+            target = project_path / f.output.format(**context)
+            self.renderer.render_to_file(f.template, target, context)
+            if f.executable:
+                target.chmod(0o755)
 
     def validate_before_generate(self, config: ProjectConfig) -> tuple[bool, list[str]]:
-        """
-        Validate configuration before generating
+        """Check that every template the spec needs exists, and warn on dep conflicts."""
+        errors: list[str] = []
 
-        Returns:
-            (is_valid, list_of_errors)
-        """
-        errors = []
-
-        # Check if templates exist
-        templates_exist, missing = TemplateRegistry.validate_templates_exist(
-            self.renderer, config.framework, config.orm
-        )
-
-        if not templates_exist:
+        missing = [t for t in all_template_paths(config)
+                   if not self.renderer.template_exists(t)]
+        if missing:
             errors.append(
                 f"Missing templates: {', '.join(missing)}\n"
                 "Please ensure all required templates are present."
             )
 
-        # Check for dependency conflicts
         deps = DependencyManager.get_all_dependencies(config)
         warnings = DependencyManager.check_dependency_conflicts(deps)
-
-        if warnings:
-            errors.extend(warnings)
+        errors.extend(warnings)
 
         return len(errors) == 0, errors
 
     def get_generation_summary(self, config: ProjectConfig) -> dict:
-        """
-        Get summary of what will be generated
-
-        Returns:
-            Dictionary with generation details
-        """
+        """Return a summary of what `generate()` will produce (for UX/dry-run)."""
+        spec = get_spec(config)
         deps_info = DependencyManager.get_dependency_info(config)
-        templates = TemplateRegistry.get_templates_for_config(
-            config.framework, config.orm, config.auth_enabled, config.testing_suite
-        )
+
+        all_files = list(COMMON_FILES)
+        if config.docker_support:
+            all_files.extend(DOCKER_FILES)
+        all_files.extend(spec.files)
+        if config.testing_suite:
+            all_files.extend(spec.test_files)
+
+        applicable = [f for f in all_files if f.when(config)]
 
         return {
             "project_name": config.name,
@@ -288,12 +159,11 @@ class ProjectGenerator:
                 "git": config.git_init,
             },
             "dependencies": deps_info,
-            "templates_count": len(templates),
+            "templates_count": len(applicable),
             "output_path": str(config.get_output_path()),
         }
 
 
-# Convenience function for quick project generation
 def quick_generate(
     name: str,
     framework: str,
@@ -304,22 +174,7 @@ def quick_generate(
     testing: bool = True,
     git: bool = True,
 ) -> Path:
-    """
-    Quick project generation with default settings
-
-    Args:
-        name: Project name
-        framework: Framework to use
-        orm: ORM to use
-        database: Database type
-        auth: Enable authentication
-        docker: Include Docker support
-        testing: Include testing suite
-        git: Initialize git repository
-
-    Returns:
-        Path to generated project
-    """
+    """Convenience function: build a `ProjectConfig` and generate in one call."""
     config = ProjectConfig(
         name=name,
         framework=framework,
@@ -330,6 +185,4 @@ def quick_generate(
         testing_suite=testing,
         git_init=git,
     )
-
-    generator = ProjectGenerator()
-    return generator.generate(config)
+    return ProjectGenerator().generate(config)
