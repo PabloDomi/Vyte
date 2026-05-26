@@ -10,10 +10,13 @@ from jinja2 import TemplateNotFound
 
 def test_generator_initialization(generator):
     """Test generator initialization"""
+    from vyte.strategies.registry import FRAMEWORK_REGISTRY
+
     assert generator.renderer is not None
-    assert generator.STRATEGIES is not None
-    assert "Flask-Restx" in generator.STRATEGIES
-    assert "FastAPI" in generator.STRATEGIES
+    # Every supported (framework, ORM) combo has a spec in the registry
+    assert ("Flask-Restx", "SQLAlchemy") in FRAMEWORK_REGISTRY
+    assert ("FastAPI", "SQLAlchemy") in FRAMEWORK_REGISTRY
+    assert ("Django-Rest", "DjangoORM") in FRAMEWORK_REGISTRY
 
 
 def test_validate_before_generate(generator, sample_config):
