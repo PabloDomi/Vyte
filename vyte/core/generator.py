@@ -119,8 +119,7 @@ class ProjectGenerator:
         """Check that every template the spec needs exists, and warn on dep conflicts."""
         errors: list[str] = []
 
-        missing = [t for t in all_template_paths(config)
-                   if not self.renderer.template_exists(t)]
+        missing = [t for t in all_template_paths(config) if not self.renderer.template_exists(t)]
         if missing:
             errors.append(
                 f"Missing templates: {', '.join(missing)}\n"

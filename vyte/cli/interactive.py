@@ -2,6 +2,7 @@
 """
 Interactive setup for project configuration
 """
+
 from InquirerPy import inquirer
 from InquirerPy.validator import EmptyInputValidator
 

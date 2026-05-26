@@ -2,6 +2,7 @@
 """
 Test configuration module
 """
+
 import pytest
 from pydantic import ValidationError
 

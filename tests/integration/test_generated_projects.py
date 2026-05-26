@@ -2,6 +2,7 @@
 """
 Integration tests for generated projects
 """
+
 import os
 import subprocess
 import tempfile

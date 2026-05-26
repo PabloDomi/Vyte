@@ -2,6 +2,7 @@
 """
 CLI module for vyte
 """
+
 from .commands import cli
 from .display import (
     show_error,

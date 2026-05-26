@@ -10,7 +10,6 @@ We always materialize the structure ourselves instead of shelling out to
 
 from pathlib import Path
 
-
 _ALEMBIC_INI = """# A generic, single database configuration.
 
 [alembic]

@@ -2,6 +2,7 @@
 """
 Test project generator
 """
+
 import subprocess
 
 import pytest

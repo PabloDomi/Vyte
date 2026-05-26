@@ -2,6 +2,7 @@
 """
 Test template rendering
 """
+
 from vyte.core.renderer import TemplateRegistry
 
 

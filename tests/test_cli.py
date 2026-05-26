@@ -2,6 +2,7 @@
 """
 Test CLI commands
 """
+
 import vyte
 from vyte.cli.commands import cli
 

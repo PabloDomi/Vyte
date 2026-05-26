@@ -2,6 +2,7 @@
 """
 Test dependency management
 """
+
 from vyte.core.config import ProjectConfig
 from vyte.core.dependencies import DependencyManager
 

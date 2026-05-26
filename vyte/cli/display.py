@@ -2,6 +2,7 @@
 """
 Display utilities using Rich
 """
+
 import time
 from pathlib import Path
 

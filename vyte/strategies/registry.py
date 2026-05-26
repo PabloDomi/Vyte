@@ -94,10 +94,25 @@ def _alembic_for_src(project_path: Path, _config: ProjectConfig) -> None:
 FLASK_RESTX_SQLALCHEMY = FrameworkSpec(
     framework="Flask-Restx",
     orm="SQLAlchemy",
-    dirs=("src", "src/models", "src/routes", "src/services", "src/config",
-          "src/utils", "src/controllers", "migrations"),
-    init_dirs=("src", "src/models", "src/routes", "src/services", "src/config",
-               "src/utils", "src/controllers"),
+    dirs=(
+        "src",
+        "src/models",
+        "src/routes",
+        "src/services",
+        "src/config",
+        "src/utils",
+        "src/controllers",
+        "migrations",
+    ),
+    init_dirs=(
+        "src",
+        "src/models",
+        "src/routes",
+        "src/services",
+        "src/config",
+        "src/utils",
+        "src/controllers",
+    ),
     files=(
         FileSpec("flask_restx/sqlalchemy/__init__.py.j2", "src/__init__.py"),
         FileSpec("flask_restx/sqlalchemy/extensions.py.j2", "src/extensions.py"),
@@ -120,10 +135,25 @@ FLASK_RESTX_SQLALCHEMY = FrameworkSpec(
 FLASK_RESTX_PEEWEE = FrameworkSpec(
     framework="Flask-Restx",
     orm="Peewee",
-    dirs=("src", "src/models", "src/routes", "src/services", "src/config",
-          "src/utils", "src/controllers", "migrations"),
-    init_dirs=("src", "src/models", "src/routes", "src/services", "src/config",
-               "src/utils", "src/controllers"),
+    dirs=(
+        "src",
+        "src/models",
+        "src/routes",
+        "src/services",
+        "src/config",
+        "src/utils",
+        "src/controllers",
+        "migrations",
+    ),
+    init_dirs=(
+        "src",
+        "src/models",
+        "src/routes",
+        "src/services",
+        "src/config",
+        "src/utils",
+        "src/controllers",
+    ),
     files=(
         FileSpec("flask_restx/peewee/__init__.py.j2", "src/__init__.py"),
         FileSpec("flask_restx/peewee/extensions.py.j2", "src/extensions.py"),
@@ -146,10 +176,28 @@ FLASK_RESTX_PEEWEE = FrameworkSpec(
 FASTAPI_SQLALCHEMY = FrameworkSpec(
     framework="FastAPI",
     orm="SQLAlchemy",
-    dirs=("src", "src/models", "src/routes", "src/services", "src/config",
-          "src/utils", "src/api", "src/schemas", "src/crud"),
-    init_dirs=("src", "src/models", "src/routes", "src/services", "src/config",
-               "src/utils", "src/api", "src/schemas", "src/crud"),
+    dirs=(
+        "src",
+        "src/models",
+        "src/routes",
+        "src/services",
+        "src/config",
+        "src/utils",
+        "src/api",
+        "src/schemas",
+        "src/crud",
+    ),
+    init_dirs=(
+        "src",
+        "src/models",
+        "src/routes",
+        "src/services",
+        "src/config",
+        "src/utils",
+        "src/api",
+        "src/schemas",
+        "src/crud",
+    ),
     files=(
         FileSpec("fastapi/sqlalchemy/main.py.j2", "src/main.py"),
         FileSpec("fastapi/sqlalchemy/database.py.j2", "src/database.py"),
@@ -173,10 +221,28 @@ FASTAPI_SQLALCHEMY = FrameworkSpec(
 FASTAPI_TORTOISE = FrameworkSpec(
     framework="FastAPI",
     orm="TortoiseORM",
-    dirs=("src", "src/models", "src/routes", "src/services", "src/config",
-          "src/utils", "src/api", "src/schemas", "src/crud"),
-    init_dirs=("src", "src/models", "src/routes", "src/services", "src/config",
-               "src/utils", "src/api", "src/schemas", "src/crud"),
+    dirs=(
+        "src",
+        "src/models",
+        "src/routes",
+        "src/services",
+        "src/config",
+        "src/utils",
+        "src/api",
+        "src/schemas",
+        "src/crud",
+    ),
+    init_dirs=(
+        "src",
+        "src/models",
+        "src/routes",
+        "src/services",
+        "src/config",
+        "src/utils",
+        "src/api",
+        "src/schemas",
+        "src/crud",
+    ),
     files=(
         FileSpec("fastapi/tortoise/main.py.j2", "src/main.py"),
         FileSpec("fastapi/tortoise/database.py.j2", "src/database.py"),
@@ -199,10 +265,18 @@ FASTAPI_TORTOISE = FrameworkSpec(
 DJANGO_REST_DJANGOORM = FrameworkSpec(
     framework="Django-Rest",
     orm="DjangoORM",
-    dirs=("{app_name}", "{app_name}/migrations",
-          "{app_name}/management", "{app_name}/management/commands"),
-    init_dirs=("{app_name}", "{app_name}/migrations",
-               "{app_name}/management", "{app_name}/management/commands"),
+    dirs=(
+        "{app_name}",
+        "{app_name}/migrations",
+        "{app_name}/management",
+        "{app_name}/management/commands",
+    ),
+    init_dirs=(
+        "{app_name}",
+        "{app_name}/migrations",
+        "{app_name}/management",
+        "{app_name}/management/commands",
+    ),
     files=(
         FileSpec("django-rest/djangoORM/settings.py.j2", "{app_name}/settings.py"),
         FileSpec("django-rest/djangoORM/urls.py.j2", "{app_name}/urls.py"),
@@ -213,8 +287,9 @@ DJANGO_REST_DJANGOORM = FrameworkSpec(
         FileSpec("django-rest/djangoORM/wsgi.py.j2", "{app_name}/wsgi.py"),
         FileSpec("django-rest/djangoORM/asgi.py.j2", "{app_name}/asgi.py"),
         FileSpec("django-rest/djangoORM/manage.py.j2", "manage.py", executable=True),
-        FileSpec("django-rest/djangoORM/permissions.py.j2", "{app_name}/permissions.py",
-                 when=_if_auth),
+        FileSpec(
+            "django-rest/djangoORM/permissions.py.j2", "{app_name}/permissions.py", when=_if_auth
+        ),
         FileSpec("common/security.py.j2", "{app_name}/security.py", when=_if_auth),
     ),
     test_files=(
@@ -245,8 +320,7 @@ def get_spec(config: ProjectConfig) -> FrameworkSpec:
     spec = FRAMEWORK_REGISTRY.get(key)
     if spec is None:
         raise KeyError(
-            f"No spec for combination {key}. "
-            f"Available: {sorted(FRAMEWORK_REGISTRY.keys())}"
+            f"No spec for combination {key}. " f"Available: {sorted(FRAMEWORK_REGISTRY.keys())}"
         )
     return spec
 
